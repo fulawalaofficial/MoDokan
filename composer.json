@@ -1,0 +1,17 @@
+{
+  "name": "mo-dokana/laravel-api",
+  "description": "Mo Dokana shop management Laravel API/admin backend starter",
+  "type": "project",
+  "require": {
+    "php": "^8.2",
+    "laravel/framework": "^12.0",
+    "laravel/sanctum": "^4.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/",
+      "Database\\Factories\\": "database/factories/",
+      "Database\\Seeders\\": "database/seeders/"
+    }
+  }
+}

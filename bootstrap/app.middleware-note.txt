@@ -1,0 +1,5 @@
+Add this middleware alias in bootstrap/app.php:
+
+$middleware->alias([
+    'shop.active' => \App\Http\Middleware\EnsureShopIsActive::class,
+]);

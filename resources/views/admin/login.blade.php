@@ -1,0 +1,1 @@
+<!doctype html><html><head><title>Admin Login</title><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-slate-100"><div class="max-w-md mx-auto mt-20 bg-white p-8 rounded-2xl shadow"><h1 class="text-2xl font-bold mb-4">Mo Dokana Admin Login</h1><p>Connect this form to web AuthController if you need full server-rendered admin login.</p></div></body></html>
