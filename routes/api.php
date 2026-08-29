@@ -34,29 +34,29 @@ Route::middleware(['auth:sanctum', 'shop.active'])->group(function () {
     Route::put('/shop/profile', [ShopController::class, 'update']);
     Route::put('/settings', [SettingsController::class, 'update']);
 
-    Route::apiResource('/product-categories', ProductCategoryController::class);
-    Route::apiResource('/products', ProductController::class);
+    Route::apiResource('product-categories', ProductCategoryController::class);
+    Route::apiResource('products', ProductController::class);
     Route::get('/stock/history', [StockController::class, 'history']);
     Route::post('/stock/in', [StockController::class, 'stockIn']);
     Route::post('/stock/out', [StockController::class, 'stockOut']);
 
-    Route::apiResource('/suppliers', SupplierController::class);
-    Route::apiResource('/customers', CustomerController::class);
+    Route::apiResource('suppliers', SupplierController::class);
+    Route::apiResource('customers', CustomerController::class);
     Route::get('/customers/{customer}/ledger', [CustomerController::class, 'ledger']);
 
-    Route::apiResource('/sales', SaleController::class)->only(['index', 'store', 'show']);
+    Route::apiResource('sales', SaleController::class)->only(['index', 'store', 'show']);
     Route::post('/sales/{sale}/return', [SaleController::class, 'returnSale']);
 
     Route::get('/dues', [DueController::class, 'index']);
     Route::post('/dues/collect', [DueController::class, 'collect']);
     Route::get('/payments', [PaymentController::class, 'index']);
 
-    Route::apiResource('/repairs', RepairController::class);
+    Route::apiResource('repairs', RepairController::class);
     Route::patch('/repairs/{repair}/status', [RepairController::class, 'updateStatus']);
     Route::post('/repairs/{repair}/payment', [RepairController::class, 'collectPayment']);
 
-    Route::apiResource('/expenses', ExpenseController::class);
-    Route::apiResource('/staff', StaffController::class);
+    Route::apiResource('expenses', ExpenseController::class);
+    Route::apiResource('staff', StaffController::class);
 
     Route::get('/reports/sales', [ReportController::class, 'sales']);
     Route::get('/reports/profit', [ReportController::class, 'profit']);
