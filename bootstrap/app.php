@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ShopActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -12,7 +13,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        /*
+        |--------------------------------------------------------------------------
+        | Route middleware aliases
+        |--------------------------------------------------------------------------
+        |
+        | This fixes:
+        |   Target class [shop.active] does not exist.
+        |
+        */
+        $middleware->alias([
+            'shop.active' => ShopActive::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

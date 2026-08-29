@@ -14,21 +14,22 @@ trait ResolvesShop
         $user = $request->user();
 
         if (!$user) {
-            throw new AuthenticationException(
-                'Unauthenticated.'
-            );
+            throw new AuthenticationException('Unauthenticated.');
         }
 
-        $middlewareShop =
-            $request->attributes->get('current_shop');
+        /*
+         * ShopActive middleware already resolved the current shop.
+         */
+        $resolvedShop = $request->attributes->get('current_shop');
 
-        if ($middlewareShop instanceof Shop) {
-            return $middlewareShop;
+        if ($resolvedShop instanceof Shop) {
+            return $resolvedShop;
         }
 
-        $shopId = (int) (
-            $user->getAttribute('shop_id') ?? 0
-        );
+        /*
+         * Fallback: resolve directly from users.shop_id.
+         */
+        $shopId = (int) ($user->getAttribute('shop_id') ?? 0);
 
         if ($shopId > 0) {
             $shop = Shop::query()->find($shopId);
@@ -38,17 +39,19 @@ trait ResolvesShop
             }
         }
 
-        // Same repair fallback used by EnsureShopActive.
-        $ownedShop = Shop::query()
+        /*
+         * Compatibility fallback for older owner accounts.
+         */
+        $shop = Shop::query()
             ->where('owner_id', $user->getKey())
             ->first();
 
-        if ($ownedShop) {
+        if ($shop) {
             $user->forceFill([
-                'shop_id' => $ownedShop->getKey(),
+                'shop_id' => $shop->getKey(),
             ])->saveQuietly();
 
-            return $ownedShop;
+            return $shop;
         }
 
         throw new HttpException(

@@ -17,31 +17,12 @@ use App\Http\Controllers\Api\ShopController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\SupplierController;
-use App\Http\Middleware\EnsureShopActive;
+use App\Http\Middleware\ShopActive;
 use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| IMPORTANT FIX
-|--------------------------------------------------------------------------
-|
-| Your laravel.log shows:
-|
-|   Target class [shop.active] does not exist.
-|
-| Register the alias here as well as using the middleware class directly.
-| This makes old/stale route definitions that still reference "shop.active"
-| resolvable after route/cache clearing.
-|
-*/
-Route::aliasMiddleware(
-    'shop.active',
-    EnsureShopActive::class
-);
-
-/*
-|--------------------------------------------------------------------------
-| Public API
+| Public
 |--------------------------------------------------------------------------
 */
 
@@ -55,13 +36,18 @@ Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
 | Authenticated shop API
 |--------------------------------------------------------------------------
 |
-| Use EnsureShopActive::class directly so /api/dashboard does not depend on
-| middleware alias lookup.
+| IMPORTANT:
+| Use ShopActive::class directly for these API routes.
+|
+| bootstrap/app.php ALSO registers:
+|   'shop.active' => ShopActive::class
+|
+| so any other existing route that still uses the string alias works too.
 |
 */
 Route::middleware([
     'auth:sanctum',
-    EnsureShopActive::class,
+    ShopActive::class,
 ])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
