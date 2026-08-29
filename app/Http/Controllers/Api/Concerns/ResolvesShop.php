@@ -10,34 +10,51 @@ trait ResolvesShop
 {
     protected function shop(): Shop
     {
-        $user = request()->user();
+        $request = request();
+        $user = $request->user();
 
         if (!$user) {
-            throw new AuthenticationException('Unauthenticated.');
+            throw new AuthenticationException(
+                'Unauthenticated.'
+            );
         }
 
-        /*
-         * IMPORTANT:
-         * Do not use "$user->shop" here.
-         *
-         * If the User model does not have a shop() relationship, accessing
-         * $user->shop can throw an exception and the dashboard becomes a 500.
-         *
-         * We resolve the shop directly from users.shop_id instead.
-         */
-        $shopId = (int) ($user->getAttribute('shop_id') ?? 0);
+        $middlewareShop =
+            $request->attributes->get('current_shop');
 
-        if ($shopId <= 0) {
-            throw new HttpException(403, 'Shop not found for this user.');
+        if ($middlewareShop instanceof Shop) {
+            return $middlewareShop;
         }
 
-        $shop = Shop::query()->find($shopId);
+        $shopId = (int) (
+            $user->getAttribute('shop_id') ?? 0
+        );
 
-        if (!$shop) {
-            throw new HttpException(403, 'Assigned shop does not exist.');
+        if ($shopId > 0) {
+            $shop = Shop::query()->find($shopId);
+
+            if ($shop) {
+                return $shop;
+            }
         }
 
-        return $shop;
+        // Same repair fallback used by EnsureShopActive.
+        $ownedShop = Shop::query()
+            ->where('owner_id', $user->getKey())
+            ->first();
+
+        if ($ownedShop) {
+            $user->forceFill([
+                'shop_id' => $ownedShop->getKey(),
+            ])->saveQuietly();
+
+            return $ownedShop;
+        }
+
+        throw new HttpException(
+            403,
+            'Shop not found for this user.'
+        );
     }
 
     protected function shopId(): int

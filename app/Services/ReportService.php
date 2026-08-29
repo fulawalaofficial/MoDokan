@@ -9,6 +9,7 @@ use App\Models\Repair;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -18,8 +19,15 @@ class ReportService
 {
     public function range(array $filters): array
     {
-        $from = Carbon::parse($filters['from'] ?? now()->startOfMonth())->startOfDay();
-        $to = Carbon::parse($filters['to'] ?? now())->endOfDay();
+        $from = Carbon::parse(
+            $filters['from'] ??
+            now()->startOfMonth()
+        )->startOfDay();
+
+        $to = Carbon::parse(
+            $filters['to'] ??
+            now()
+        )->endOfDay();
 
         return [$from, $to];
     }
@@ -30,302 +38,680 @@ class ReportService
         $todayEnd = now()->copy()->endOfDay();
 
         $todaySales = $this->safe(
-            fn () => (float) Sale::query()
-                ->where('shop_id', $shopId)
-                ->whereBetween('sale_date', [$todayStart, $todayEnd])
-                ->sum('total_amount'),
+            'today_sales',
             0.0,
-            'today_sales'
+            function () use (
+                $shopId,
+                $todayStart,
+                $todayEnd
+            ) {
+                if (!$this->hasTable('sales')) {
+                    return 0.0;
+                }
+
+                return (float) Sale::query()
+                    ->where('shop_id', $shopId)
+                    ->whereBetween(
+                        'sale_date',
+                        [$todayStart, $todayEnd]
+                    )
+                    ->sum('total_amount');
+            }
         );
 
         $todayPaid = $this->safe(
-            fn () => (float) Sale::query()
-                ->where('shop_id', $shopId)
-                ->whereBetween('sale_date', [$todayStart, $todayEnd])
-                ->sum('paid_amount'),
+            'today_paid',
             0.0,
-            'today_paid'
+            function () use (
+                $shopId,
+                $todayStart,
+                $todayEnd
+            ) {
+                if (!$this->hasTable('sales')) {
+                    return 0.0;
+                }
+
+                return (float) Sale::query()
+                    ->where('shop_id', $shopId)
+                    ->whereBetween(
+                        'sale_date',
+                        [$todayStart, $todayEnd]
+                    )
+                    ->sum('paid_amount');
+            }
         );
 
         $todayDue = $this->safe(
-            fn () => (float) Sale::query()
-                ->where('shop_id', $shopId)
-                ->whereBetween('sale_date', [$todayStart, $todayEnd])
-                ->sum('due_amount'),
+            'today_due',
             0.0,
-            'today_due'
+            function () use (
+                $shopId,
+                $todayStart,
+                $todayEnd
+            ) {
+                if (!$this->hasTable('sales')) {
+                    return 0.0;
+                }
+
+                return (float) Sale::query()
+                    ->where('shop_id', $shopId)
+                    ->whereBetween(
+                        'sale_date',
+                        [$todayStart, $todayEnd]
+                    )
+                    ->sum('due_amount');
+            }
         );
 
         $todayExpense = $this->safe(
-            fn () => (float) Expense::query()
-                ->where('shop_id', $shopId)
-                ->whereDate('expense_date', today())
-                ->sum('amount'),
+            'today_expense',
             0.0,
-            'today_expense'
+            function () use ($shopId) {
+                if (!$this->hasTable('expenses')) {
+                    return 0.0;
+                }
+
+                return (float) Expense::query()
+                    ->where('shop_id', $shopId)
+                    ->whereDate(
+                        'expense_date',
+                        today()
+                    )
+                    ->sum('amount');
+            }
         );
 
         $grossProfit = $this->safe(
-            fn () => $this->todayGrossProfit($shopId, $todayStart, $todayEnd),
+            'today_gross_profit',
             0.0,
-            'today_gross_profit'
+            fn () => $this->todayGrossProfit(
+                $shopId,
+                $todayStart,
+                $todayEnd
+            )
         );
 
         $totalCustomers = $this->safe(
-            fn () => Customer::query()->where('shop_id', $shopId)->count(),
+            'total_customers',
             0,
-            'total_customers'
+            function () use ($shopId) {
+                if (!$this->hasTable('customers')) {
+                    return 0;
+                }
+
+                return Customer::query()
+                    ->where('shop_id', $shopId)
+                    ->count();
+            }
         );
 
         $totalProducts = $this->safe(
-            fn () => Product::query()->where('shop_id', $shopId)->count(),
+            'total_products',
             0,
-            'total_products'
-        );
-
-        $totalStockValue = $this->safe(
-            fn () => (float) Product::query()
-                ->where('shop_id', $shopId)
-                ->selectRaw('COALESCE(SUM(quantity * purchase_price), 0) AS stock_value')
-                ->value('stock_value'),
-            0.0,
-            'total_stock_value'
-        );
-
-        $lowStockProducts = $this->safe(
             function () use ($shopId) {
-                if (!Schema::hasColumn('products', 'low_stock_alert')) {
+                if (!$this->hasTable('products')) {
                     return 0;
                 }
 
                 return Product::query()
                     ->where('shop_id', $shopId)
-                    ->whereColumn('quantity', '<=', 'low_stock_alert')
                     ->count();
-            },
+            }
+        );
+
+        $stockValue = $this->safe(
+            'total_stock_value',
+            0.0,
+            function () use ($shopId) {
+                if (
+                    !$this->hasColumns(
+                        'products',
+                        [
+                            'shop_id',
+                            'quantity',
+                            'purchase_price',
+                        ]
+                    )
+                ) {
+                    return 0.0;
+                }
+
+                return (float) Product::query()
+                    ->where('shop_id', $shopId)
+                    ->selectRaw(
+                        'COALESCE(SUM(quantity * purchase_price), 0) AS stock_value'
+                    )
+                    ->value('stock_value');
+            }
+        );
+
+        $lowStock = $this->safe(
+            'low_stock_products',
             0,
-            'low_stock_products'
+            function () use ($shopId) {
+                if (
+                    !$this->hasColumns(
+                        'products',
+                        [
+                            'shop_id',
+                            'quantity',
+                            'low_stock_alert',
+                        ]
+                    )
+                ) {
+                    return 0;
+                }
+
+                return Product::query()
+                    ->where('shop_id', $shopId)
+                    ->whereColumn(
+                        'quantity',
+                        '<=',
+                        'low_stock_alert'
+                    )
+                    ->count();
+            }
         );
 
         $repairPending = $this->safe(
-            fn () => Repair::query()
-                ->where('shop_id', $shopId)
-                ->whereNotIn('status', ['Delivered', 'Cancelled'])
-                ->count(),
+            'repair_pending',
             0,
-            'repair_pending'
-        );
-
-        $repairDueToday = $this->safe(
             function () use ($shopId) {
                 if (
-                    !Schema::hasColumn('repairs', 'expected_return_date') ||
-                    !Schema::hasColumn('repairs', 'delivery_status')
+                    !$this->hasColumns(
+                        'repairs',
+                        ['shop_id', 'status']
+                    )
                 ) {
                     return 0;
                 }
 
                 return Repair::query()
                     ->where('shop_id', $shopId)
-                    ->whereDate('expected_return_date', today())
-                    ->where('delivery_status', 'Pending')
+                    ->whereNotIn(
+                        'status',
+                        ['Delivered', 'Cancelled']
+                    )
                     ->count();
-            },
+            }
+        );
+
+        $repairDueToday = $this->safe(
+            'repair_due_today',
             0,
-            'repair_due_today'
+            function () use ($shopId) {
+                if (
+                    !$this->hasColumns(
+                        'repairs',
+                        [
+                            'shop_id',
+                            'expected_return_date',
+                            'delivery_status',
+                        ]
+                    )
+                ) {
+                    return 0;
+                }
+
+                return Repair::query()
+                    ->where('shop_id', $shopId)
+                    ->whereDate(
+                        'expected_return_date',
+                        today()
+                    )
+                    ->where(
+                        'delivery_status',
+                        'Pending'
+                    )
+                    ->count();
+            }
         );
 
         $recentTransactions = $this->safe(
-            fn () => Sale::query()
-                ->where('shop_id', $shopId)
-                ->with('customer:id,name,mobile')
-                ->orderByDesc('sale_date')
-                ->limit(5)
-                ->get(),
+            'recent_transactions',
             collect(),
-            'recent_transactions'
+            function () use ($shopId) {
+                if (!$this->hasTable('sales')) {
+                    return collect();
+                }
+
+                $query = Sale::query()
+                    ->where('shop_id', $shopId)
+                    ->orderByDesc('sale_date')
+                    ->limit(5);
+
+                if ($this->hasTable('customers')) {
+                    $query->with('customer');
+                }
+
+                return $query->get();
+            }
         );
 
         $recentCustomers = $this->safe(
-            fn () => Customer::query()
-                ->where('shop_id', $shopId)
-                ->orderByDesc('id')
-                ->limit(5)
-                ->get(),
+            'recent_customers',
             collect(),
-            'recent_customers'
+            function () use ($shopId) {
+                if (!$this->hasTable('customers')) {
+                    return collect();
+                }
+
+                return Customer::query()
+                    ->where('shop_id', $shopId)
+                    ->orderByDesc('id')
+                    ->limit(5)
+                    ->get();
+            }
         );
 
         return [
-            'today_sales' => round((float) $todaySales, 2),
-            'today_paid' => round((float) $todayPaid, 2),
-            'today_due' => round((float) $todayDue, 2),
-            'today_expense' => round((float) $todayExpense, 2),
-            'today_profit' => round((float) $grossProfit - (float) $todayExpense, 2),
+            'today_sales' =>
+                round((float) $todaySales, 2),
 
-            'total_customers' => (int) $totalCustomers,
-            'total_products' => (int) $totalProducts,
-            'total_stock_value' => round((float) $totalStockValue, 2),
-            'low_stock_products' => (int) $lowStockProducts,
+            'today_paid' =>
+                round((float) $todayPaid, 2),
 
-            'repair_pending' => (int) $repairPending,
-            'repair_due_today' => (int) $repairDueToday,
+            'today_due' =>
+                round((float) $todayDue, 2),
 
-            'recent_transactions' => $recentTransactions,
-            'recent_customers' => $recentCustomers,
+            'today_expense' =>
+                round((float) $todayExpense, 2),
 
-            'monthly_sales_chart' => $this->safe(
-                fn () => $this->monthlySaleChart($shopId),
-                [],
-                'monthly_sales_chart'
-            ),
+            'today_profit' =>
+                round(
+                    (float) $grossProfit -
+                    (float) $todayExpense,
+                    2
+                ),
 
-            'monthly_profit_chart' => $this->safe(
-                fn () => $this->monthlyProfitChart($shopId),
-                [],
-                'monthly_profit_chart'
-            ),
+            'total_customers' =>
+                (int) $totalCustomers,
+
+            'total_products' =>
+                (int) $totalProducts,
+
+            'total_stock_value' =>
+                round((float) $stockValue, 2),
+
+            'low_stock_products' =>
+                (int) $lowStock,
+
+            'repair_pending' =>
+                (int) $repairPending,
+
+            'repair_due_today' =>
+                (int) $repairDueToday,
+
+            'recent_transactions' =>
+                $recentTransactions,
+
+            'recent_customers' =>
+                $recentCustomers,
+
+            'monthly_sales_chart' =>
+                $this->safe(
+                    'monthly_sales_chart',
+                    [],
+                    fn () =>
+                        $this->monthlySaleChart(
+                            $shopId
+                        )
+                ),
+
+            'monthly_profit_chart' =>
+                $this->safe(
+                    'monthly_profit_chart',
+                    [],
+                    fn () =>
+                        $this->monthlyProfitChart(
+                            $shopId
+                        )
+                ),
         ];
     }
 
-    private function todayGrossProfit(int $shopId, Carbon $from, Carbon $to): float
-    {
-        if (!Schema::hasTable('sale_items') || !Schema::hasTable('sales')) {
+    private function todayGrossProfit(
+        int $shopId,
+        Carbon $from,
+        Carbon $to
+    ): float {
+        if (
+            !$this->hasTable('sale_items') ||
+            !$this->hasTable('sales')
+        ) {
             return 0.0;
         }
 
-        if (Schema::hasColumn('sale_items', 'profit')) {
+        if ($this->hasColumn(
+            'sale_items',
+            'profit'
+        )) {
             return (float) SaleItem::query()
-                ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-                ->where('sales.shop_id', $shopId)
-                ->whereBetween('sales.sale_date', [$from, $to])
+                ->join(
+                    'sales',
+                    'sales.id',
+                    '=',
+                    'sale_items.sale_id'
+                )
+                ->where(
+                    'sales.shop_id',
+                    $shopId
+                )
+                ->whereBetween(
+                    'sales.sale_date',
+                    [$from, $to]
+                )
                 ->sum('sale_items.profit');
         }
 
-        /*
-         * Compatibility fallback for older databases where the profit column
-         * has not yet been created.
-         */
-        $required = ['quantity', 'purchase_price', 'selling_price'];
-
-        foreach ($required as $column) {
-            if (!Schema::hasColumn('sale_items', $column)) {
-                return 0.0;
-            }
+        if (
+            !$this->hasColumns(
+                'sale_items',
+                [
+                    'quantity',
+                    'purchase_price',
+                    'selling_price',
+                ]
+            )
+        ) {
+            return 0.0;
         }
 
-        $discountSql = Schema::hasColumn('sale_items', 'discount')
+        $discount = $this->hasColumn(
+            'sale_items',
+            'discount'
+        )
             ? 'COALESCE(sale_items.discount, 0)'
             : '0';
 
         return (float) SaleItem::query()
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->where('sales.shop_id', $shopId)
-            ->whereBetween('sales.sale_date', [$from, $to])
+            ->join(
+                'sales',
+                'sales.id',
+                '=',
+                'sale_items.sale_id'
+            )
+            ->where(
+                'sales.shop_id',
+                $shopId
+            )
+            ->whereBetween(
+                'sales.sale_date',
+                [$from, $to]
+            )
             ->selectRaw(
-                "COALESCE(SUM(((sale_items.selling_price - sale_items.purchase_price) * sale_items.quantity) - {$discountSql}), 0) AS profit"
+                "COALESCE(
+                    SUM(
+                        (
+                            (
+                                sale_items.selling_price -
+                                sale_items.purchase_price
+                            ) *
+                            sale_items.quantity
+                        ) -
+                        {$discount}
+                    ),
+                    0
+                ) AS profit"
             )
             ->value('profit');
     }
 
-    public function monthlySaleChart(int $shopId): array
-    {
-        $monthExpression = $this->monthExpression('sales.sale_date');
+    public function monthlySaleChart(
+        int $shopId
+    ): array {
+        if (
+            !$this->hasColumns(
+                'sales',
+                [
+                    'shop_id',
+                    'sale_date',
+                    'total_amount',
+                ]
+            )
+        ) {
+            return [];
+        }
+
+        $month = $this->monthExpression(
+            'sales.sale_date'
+        );
 
         return Sale::query()
-            ->where('sales.shop_id', $shopId)
-            ->where('sales.sale_date', '>=', now()->subMonths(11)->startOfMonth())
-            ->selectRaw("{$monthExpression} AS month, SUM(sales.total_amount) AS total")
+            ->where(
+                'sales.shop_id',
+                $shopId
+            )
+            ->where(
+                'sales.sale_date',
+                '>=',
+                now()
+                    ->subMonths(11)
+                    ->startOfMonth()
+            )
+            ->selectRaw(
+                "{$month} AS month,
+                 SUM(sales.total_amount) AS total"
+            )
             ->groupBy('month')
             ->orderBy('month')
             ->get()
             ->map(fn ($row) => [
                 'month' => $row->month,
-                'total' => round((float) $row->total, 2),
+                'total' =>
+                    round((float) $row->total, 2),
             ])
             ->values()
             ->all();
     }
 
-    public function monthlyProfitChart(int $shopId): array
-    {
-        if (!Schema::hasTable('sale_items') || !Schema::hasTable('sales')) {
+    public function monthlyProfitChart(
+        int $shopId
+    ): array {
+        if (
+            !$this->hasTable('sale_items') ||
+            !$this->hasTable('sales')
+        ) {
             return [];
         }
 
-        $monthExpression = $this->monthExpression('sales.sale_date');
+        $month = $this->monthExpression(
+            'sales.sale_date'
+        );
 
-        if (Schema::hasColumn('sale_items', 'profit')) {
+        if (
+            $this->hasColumn(
+                'sale_items',
+                'profit'
+            )
+        ) {
             return SaleItem::query()
-                ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-                ->where('sales.shop_id', $shopId)
-                ->where('sales.sale_date', '>=', now()->subMonths(11)->startOfMonth())
-                ->selectRaw("{$monthExpression} AS month, SUM(sale_items.profit) AS profit")
+                ->join(
+                    'sales',
+                    'sales.id',
+                    '=',
+                    'sale_items.sale_id'
+                )
+                ->where(
+                    'sales.shop_id',
+                    $shopId
+                )
+                ->where(
+                    'sales.sale_date',
+                    '>=',
+                    now()
+                        ->subMonths(11)
+                        ->startOfMonth()
+                )
+                ->selectRaw(
+                    "{$month} AS month,
+                     SUM(sale_items.profit) AS profit"
+                )
                 ->groupBy('month')
                 ->orderBy('month')
                 ->get()
                 ->map(fn ($row) => [
                     'month' => $row->month,
-                    'profit' => round((float) $row->profit, 2),
+                    'profit' =>
+                        round(
+                            (float) $row->profit,
+                            2
+                        ),
                 ])
                 ->values()
                 ->all();
         }
 
-        $required = ['quantity', 'purchase_price', 'selling_price'];
-
-        foreach ($required as $column) {
-            if (!Schema::hasColumn('sale_items', $column)) {
-                return [];
-            }
+        if (
+            !$this->hasColumns(
+                'sale_items',
+                [
+                    'quantity',
+                    'purchase_price',
+                    'selling_price',
+                ]
+            )
+        ) {
+            return [];
         }
 
-        $discountSql = Schema::hasColumn('sale_items', 'discount')
+        $discount = $this->hasColumn(
+            'sale_items',
+            'discount'
+        )
             ? 'COALESCE(sale_items.discount, 0)'
             : '0';
 
         return SaleItem::query()
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->where('sales.shop_id', $shopId)
-            ->where('sales.sale_date', '>=', now()->subMonths(11)->startOfMonth())
+            ->join(
+                'sales',
+                'sales.id',
+                '=',
+                'sale_items.sale_id'
+            )
+            ->where(
+                'sales.shop_id',
+                $shopId
+            )
+            ->where(
+                'sales.sale_date',
+                '>=',
+                now()
+                    ->subMonths(11)
+                    ->startOfMonth()
+            )
             ->selectRaw(
-                "{$monthExpression} AS month,
-                 SUM(((sale_items.selling_price - sale_items.purchase_price) * sale_items.quantity) - {$discountSql}) AS profit"
+                "{$month} AS month,
+                 SUM(
+                    (
+                        (
+                            sale_items.selling_price -
+                            sale_items.purchase_price
+                        ) *
+                        sale_items.quantity
+                    ) -
+                    {$discount}
+                 ) AS profit"
             )
             ->groupBy('month')
             ->orderBy('month')
             ->get()
             ->map(fn ($row) => [
                 'month' => $row->month,
-                'profit' => round((float) $row->profit, 2),
+                'profit' =>
+                    round((float) $row->profit, 2),
             ])
             ->values()
             ->all();
     }
 
-    private function monthExpression(string $column): string
-    {
-        return match (DB::connection()->getDriverName()) {
-            'sqlite' => "strftime('%Y-%m', {$column})",
-            'pgsql' => "to_char({$column}, 'YYYY-MM')",
-            default => "DATE_FORMAT({$column}, '%Y-%m')",
+    private function monthExpression(
+        string $column
+    ): string {
+        return match (
+            DB::connection()->getDriverName()
+        ) {
+            'sqlite' =>
+                "strftime('%Y-%m', {$column})",
+
+            'pgsql' =>
+                "to_char({$column}, 'YYYY-MM')",
+
+            default =>
+                "DATE_FORMAT({$column}, '%Y-%m')",
         };
     }
 
-    private function safe(callable $callback, mixed $default, string $metric): mixed
-    {
+    private function hasTable(
+        string $table
+    ): bool {
+        try {
+            return Schema::hasTable($table);
+        } catch (Throwable $e) {
+            Log::warning(
+                'Dashboard schema table check failed',
+                [
+                    'table' => $table,
+                    'message' => $e->getMessage(),
+                ]
+            );
+
+            return false;
+        }
+    }
+
+    private function hasColumn(
+        string $table,
+        string $column
+    ): bool {
+        try {
+            return Schema::hasTable($table) &&
+                Schema::hasColumn(
+                    $table,
+                    $column
+                );
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
+    private function hasColumns(
+        string $table,
+        array $columns
+    ): bool {
+        if (!$this->hasTable($table)) {
+            return false;
+        }
+
+        foreach ($columns as $column) {
+            if (!$this->hasColumn(
+                $table,
+                $column
+            )) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function safe(
+        string $metric,
+        mixed $default,
+        callable $callback
+    ): mixed {
         try {
             return $callback();
         } catch (Throwable $e) {
-            /*
-             * One broken/old dashboard column should not make the entire mobile
-             * dashboard return HTTP 500. The failing metric is logged and a
-             * safe default is returned.
-             */
-            Log::warning('Dashboard metric failed', [
-                'metric' => $metric,
-                'message' => $e->getMessage(),
-            ]);
+            Log::warning(
+                'MoDokana dashboard metric failed',
+                [
+                    'metric' => $metric,
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ]
+            );
 
             return $default;
         }

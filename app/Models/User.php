@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -29,28 +28,13 @@ class User extends Authenticatable
     ];
 
     protected $casts = [
-        'permissions' => 'array',
         'email_verified_at' => 'datetime',
+        'permissions' => 'array',
         'password' => 'hashed',
     ];
 
-    public function shop(): BelongsTo
+    public function shop()
     {
-        return $this->belongsTo(Shop::class);
-    }
-
-    public function isSuperAdmin(): bool
-    {
-        return $this->role === 'super_admin';
-    }
-
-    public function isOwner(): bool
-    {
-        return $this->role === 'shop_owner';
-    }
-
-    public function isStaff(): bool
-    {
-        return $this->role === 'staff';
+        return $this->belongsTo(Shop::class, 'shop_id');
     }
 }
