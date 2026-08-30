@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RepairController;
+use App\Http\Controllers\Api\RepairPhotoController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\SettingsController;
@@ -19,8 +20,11 @@ use App\Http\Controllers\Api\ShopController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\SupplierController;
+
 use App\Http\Middleware\ShopActive;
+
 use Illuminate\Support\Facades\Route;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -28,32 +32,69 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-Route::post('/register-business', [AuthController::class, 'registerBusiness']);
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
+Route::post(
+    '/register-business',
+    [AuthController::class, 'registerBusiness']
+);
+
+Route::post(
+    '/login',
+    [AuthController::class, 'login']
+);
+
+Route::post(
+    '/forgot-password',
+    [AuthController::class, 'forgotPassword']
+);
+
+Route::post(
+    '/verify-otp',
+    [AuthController::class, 'verifyOtp']
+);
+
 
 /*
 |--------------------------------------------------------------------------
-| Public profile image
+| Public Profile Image
 |--------------------------------------------------------------------------
 |
-| The React Native app can use:
-| https://your-domain.com/api/profile-images/{filename}
+| React Native app:
 |
-| This route serves the image directly from storage/app/public/profile-images,
-| so it does not depend on a public/storage symlink.
+| GET /api/profile-images/{filename}
+|
+| Example:
+|
+| https://modokan.mahaprabhutech.online/api/profile-images/photo.jpg
+|
+| This serves images directly from:
+|
+| storage/app/public/profile-images
 |
 */
 
-Route::get('/profile-images/{filename}', [ProfileController::class, 'showPhoto'])
-    ->where('filename', '[A-Za-z0-9._-]+')
+Route::get(
+    '/profile-images/{filename}',
+    [ProfileController::class, 'showPhoto']
+)
+    ->where(
+        'filename',
+        '[A-Za-z0-9._-]+'
+    )
     ->name('profile.photo.public');
+
 
 /*
 |--------------------------------------------------------------------------
 | Authenticated Shop API
 |--------------------------------------------------------------------------
+|
+| Every route inside this group requires:
+|
+| Authorization: Bearer YOUR_SANCTUM_TOKEN
+|
+| ShopActive middleware also verifies that the logged-in user's shop
+| is active.
+|
 */
 
 Route::middleware([
@@ -61,27 +102,46 @@ Route::middleware([
     ShopActive::class,
 ])->group(function () {
 
+
     /*
     |--------------------------------------------------------------------------
     | Account / Authentication
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/me', [AuthController::class, 'me']);
-    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get(
+        '/me',
+        [AuthController::class, 'me']
+    );
+
+    Route::post(
+        '/logout',
+        [AuthController::class, 'logout']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
     | Account Profile Edit
     |--------------------------------------------------------------------------
     |
-    | React Native ProfileScreen uses PUT /api/profile.
-    | PATCH is also supported as a safe fallback.
+    | React Native:
+    |
+    | PUT   /api/profile
+    | PATCH /api/profile
     |
     */
 
-    Route::put('/profile', [AccountProfileController::class, 'update']);
-    Route::patch('/profile', [AccountProfileController::class, 'update']);
+    Route::put(
+        '/profile',
+        [AccountProfileController::class, 'update']
+    );
+
+    Route::patch(
+        '/profile',
+        [AccountProfileController::class, 'update']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -89,15 +149,26 @@ Route::middleware([
     |--------------------------------------------------------------------------
     |
     | React Native:
+    |
     | POST   /api/profile/photo
     | DELETE /api/profile/photo-delete
     |
-    | POST field name: profile_photo
+    | Multipart field:
+    |
+    | profile_photo
     |
     */
 
-    Route::post('/profile/photo', [ProfileController::class, 'uploadPhoto']);
-    Route::delete('/profile/photo-delete', [ProfileController::class, 'deletePhoto']);
+    Route::post(
+        '/profile/photo',
+        [ProfileController::class, 'uploadPhoto']
+    );
+
+    Route::delete(
+        '/profile/photo-delete',
+        [ProfileController::class, 'deletePhoto']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -105,7 +176,11 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/dashboard', [DashboardController::class, 'index']);
+    Route::get(
+        '/dashboard',
+        [DashboardController::class, 'index']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -113,9 +188,33 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/shop/profile', [ShopController::class, 'show']);
-    Route::put('/shop/profile', [ShopController::class, 'update']);
-    Route::put('/settings', [SettingsController::class, 'update']);
+    Route::get(
+        '/shop/profile',
+        [ShopController::class, 'show']
+    );
+
+    Route::put(
+        '/shop/profile',
+        [ShopController::class, 'update']
+    );
+
+    Route::put(
+        '/settings',
+        [SettingsController::class, 'update']
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Product Categories
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource(
+        'product-categories',
+        ProductCategoryController::class
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -123,8 +222,11 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('product-categories', ProductCategoryController::class);
-    Route::apiResource('products', ProductController::class);
+    Route::apiResource(
+        'products',
+        ProductController::class
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -132,19 +234,50 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/stock/history', [StockController::class, 'history']);
-    Route::post('/stock/in', [StockController::class, 'stockIn']);
-    Route::post('/stock/out', [StockController::class, 'stockOut']);
+    Route::get(
+        '/stock/history',
+        [StockController::class, 'history']
+    );
+
+    Route::post(
+        '/stock/in',
+        [StockController::class, 'stockIn']
+    );
+
+    Route::post(
+        '/stock/out',
+        [StockController::class, 'stockOut']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
-    | Suppliers / Customers
+    | Suppliers
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('suppliers', SupplierController::class);
-    Route::apiResource('customers', CustomerController::class);
-    Route::get('/customers/{customer}/ledger', [CustomerController::class, 'ledger']);
+    Route::apiResource(
+        'suppliers',
+        SupplierController::class
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customers
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource(
+        'customers',
+        CustomerController::class
+    );
+
+    Route::get(
+        '/customers/{customer}/ledger',
+        [CustomerController::class, 'ledger']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -152,42 +285,155 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('sales', SaleController::class)->only([
+    Route::apiResource(
+        'sales',
+        SaleController::class
+    )->only([
         'index',
         'store',
         'show',
     ]);
 
-    Route::post('/sales/{sale}/return', [SaleController::class, 'returnSale']);
+    Route::post(
+        '/sales/{sale}/return',
+        [SaleController::class, 'returnSale']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
-    | Dues / Payments
+    | Dues
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/dues', [DueController::class, 'index']);
-    Route::post('/dues/collect', [DueController::class, 'collect']);
-    Route::get('/payments', [PaymentController::class, 'index']);
+    Route::get(
+        '/dues',
+        [DueController::class, 'index']
+    );
+
+    Route::post(
+        '/dues/collect',
+        [DueController::class, 'collect']
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payments
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        '/payments',
+        [PaymentController::class, 'index']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
     | Repairs
     |--------------------------------------------------------------------------
+    |
+    | Standard API Resource:
+    |
+    | GET       /api/repairs
+    | POST      /api/repairs
+    | GET       /api/repairs/{repair}
+    | PUT       /api/repairs/{repair}
+    | PATCH     /api/repairs/{repair}
+    | DELETE    /api/repairs/{repair}
+    |
     */
 
-    Route::apiResource('repairs', RepairController::class);
-    Route::patch('/repairs/{repair}/status', [RepairController::class, 'updateStatus']);
-    Route::post('/repairs/{repair}/payment', [RepairController::class, 'collectPayment']);
+    Route::apiResource(
+        'repairs',
+        RepairController::class
+    );
+
 
     /*
     |--------------------------------------------------------------------------
-    | Expenses / Staff
+    | Repair Status
+    |--------------------------------------------------------------------------
+    |
+    | PATCH /api/repairs/{repair}/status
+    |
+    */
+
+    Route::patch(
+        '/repairs/{repair}/status',
+        [RepairController::class, 'updateStatus']
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Repair Payment
+    |--------------------------------------------------------------------------
+    |
+    | POST /api/repairs/{repair}/payment
+    |
+    */
+
+    Route::post(
+        '/repairs/{repair}/payment',
+        [RepairController::class, 'collectPayment']
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Repair Receiving / Item Photo
+    |--------------------------------------------------------------------------
+    |
+    | NEW ROUTE
+    |
+    | POST /api/repairs/{repair}/item-photo
+    |
+    | Multipart form field:
+    |
+    | item_photo
+    |
+    | Example:
+    |
+    | POST /api/repairs/15/item-photo
+    |
+    | Headers:
+    |
+    | Authorization: Bearer SANCTUM_TOKEN
+    | Accept: application/json
+    |
+    */
+
+    Route::post(
+        '/repairs/{repair}/item-photo',
+        [RepairPhotoController::class, 'store']
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Expenses
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('expenses', ExpenseController::class);
-    Route::apiResource('staff', StaffController::class);
+    Route::apiResource(
+        'expenses',
+        ExpenseController::class
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Staff
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource(
+        'staff',
+        StaffController::class
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -195,12 +441,36 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/reports/sales', [ReportController::class, 'sales']);
-    Route::get('/reports/profit', [ReportController::class, 'profit']);
-    Route::get('/reports/stock', [ReportController::class, 'stock']);
-    Route::get('/reports/customer-due', [ReportController::class, 'customerDue']);
-    Route::get('/reports/repair', [ReportController::class, 'repair']);
-    Route::get('/reports/expense', [ReportController::class, 'expense']);
+    Route::get(
+        '/reports/sales',
+        [ReportController::class, 'sales']
+    );
+
+    Route::get(
+        '/reports/profit',
+        [ReportController::class, 'profit']
+    );
+
+    Route::get(
+        '/reports/stock',
+        [ReportController::class, 'stock']
+    );
+
+    Route::get(
+        '/reports/customer-due',
+        [ReportController::class, 'customerDue']
+    );
+
+    Route::get(
+        '/reports/repair',
+        [ReportController::class, 'repair']
+    );
+
+    Route::get(
+        '/reports/expense',
+        [ReportController::class, 'expense']
+    );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -208,7 +478,11 @@ Route::middleware([
     |--------------------------------------------------------------------------
     */
 
-    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get(
+        '/notifications',
+        [NotificationController::class, 'index']
+    );
+
     Route::post(
         '/notifications/{notification}/read',
         [NotificationController::class, 'markRead']
