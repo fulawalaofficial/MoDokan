@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RepairController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SaleController;
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Public
+| Public API
 |--------------------------------------------------------------------------
 */
 
@@ -33,59 +34,152 @@ Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
 
 /*
 |--------------------------------------------------------------------------
-| Authenticated shop API
+| Public profile image
 |--------------------------------------------------------------------------
 |
-| IMPORTANT:
-| Use ShopActive::class directly for these API routes.
+| The React Native app can use:
+| https://your-domain.com/api/profile-images/{filename}
 |
-| bootstrap/app.php ALSO registers:
-|   'shop.active' => ShopActive::class
-|
-| so any other existing route that still uses the string alias works too.
+| This route serves the image directly from storage/app/public/profile-images,
+| so it does not depend on a public/storage symlink.
 |
 */
+
+Route::get('/profile-images/{filename}', [ProfileController::class, 'showPhoto'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('profile.photo.public');
+
+/*
+|--------------------------------------------------------------------------
+| Authenticated Shop API
+|--------------------------------------------------------------------------
+*/
+
 Route::middleware([
     'auth:sanctum',
     ShopActive::class,
 ])->group(function () {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Account / Authentication
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Profile Photo
+    |--------------------------------------------------------------------------
+    |
+    | React Native:
+    | POST   /api/profile/photo
+    | DELETE /api/profile/photo-delete
+    |
+    | POST field name: profile_photo
+    |
+    */
+
+    Route::post('/profile/photo', [ProfileController::class, 'uploadPhoto']);
+    Route::delete('/profile/photo-delete', [ProfileController::class, 'deletePhoto']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Dashboard
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('/dashboard', [DashboardController::class, 'index']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Shop / Settings
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('/shop/profile', [ShopController::class, 'show']);
     Route::put('/shop/profile', [ShopController::class, 'update']);
     Route::put('/settings', [SettingsController::class, 'update']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Products
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('product-categories', ProductCategoryController::class);
     Route::apiResource('products', ProductController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stock
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('/stock/history', [StockController::class, 'history']);
     Route::post('/stock/in', [StockController::class, 'stockIn']);
     Route::post('/stock/out', [StockController::class, 'stockOut']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Suppliers / Customers
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('suppliers', SupplierController::class);
     Route::apiResource('customers', CustomerController::class);
     Route::get('/customers/{customer}/ledger', [CustomerController::class, 'ledger']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sales
+    |--------------------------------------------------------------------------
+    */
 
     Route::apiResource('sales', SaleController::class)->only([
         'index',
         'store',
         'show',
     ]);
+
     Route::post('/sales/{sale}/return', [SaleController::class, 'returnSale']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Dues / Payments
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('/dues', [DueController::class, 'index']);
     Route::post('/dues/collect', [DueController::class, 'collect']);
     Route::get('/payments', [PaymentController::class, 'index']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Repairs
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('repairs', RepairController::class);
     Route::patch('/repairs/{repair}/status', [RepairController::class, 'updateStatus']);
     Route::post('/repairs/{repair}/payment', [RepairController::class, 'collectPayment']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Expenses / Staff
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('expenses', ExpenseController::class);
     Route::apiResource('staff', StaffController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Reports
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('/reports/sales', [ReportController::class, 'sales']);
     Route::get('/reports/profit', [ReportController::class, 'profit']);
@@ -94,6 +188,15 @@ Route::middleware([
     Route::get('/reports/repair', [ReportController::class, 'repair']);
     Route::get('/reports/expense', [ReportController::class, 'expense']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+    Route::post(
+        '/notifications/{notification}/read',
+        [NotificationController::class, 'markRead']
+    );
 });

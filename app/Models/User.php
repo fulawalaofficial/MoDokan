@@ -20,6 +20,7 @@ class User extends Authenticatable
         'role',
         'status',
         'permissions',
+        'profile_photo',
     ];
 
     protected $hidden = [
@@ -33,8 +34,48 @@ class User extends Authenticatable
         'password' => 'hashed',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | Appended API Attributes
+    |--------------------------------------------------------------------------
+    |
+    | Every JSON version of the user will automatically contain:
+    |
+    | "profile_photo_url": "https://domain.com/api/profile-images/..."
+    |
+    */
+
+    protected $appends = [
+        'profile_photo_url',
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
+
     public function shop()
     {
         return $this->belongsTo(Shop::class, 'shop_id');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors
+    |--------------------------------------------------------------------------
+    */
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        if (!$this->profile_photo) {
+            return null;
+        }
+
+        $filename = basename($this->profile_photo);
+
+        return route('profile.photo.public', [
+            'filename' => $filename,
+        ]);
     }
 }
