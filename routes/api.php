@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AccountProfileController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
@@ -68,6 +69,19 @@ Route::middleware([
 
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Account Profile Edit
+    |--------------------------------------------------------------------------
+    |
+    | React Native ProfileScreen uses PUT /api/profile.
+    | PATCH is also supported as a safe fallback.
+    |
+    */
+
+    Route::put('/profile', [AccountProfileController::class, 'update']);
+    Route::patch('/profile', [AccountProfileController::class, 'update']);
 
     /*
     |--------------------------------------------------------------------------
