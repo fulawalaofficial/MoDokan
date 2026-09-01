@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -34,17 +35,6 @@ class User extends Authenticatable
         'password' => 'hashed',
     ];
 
-    /*
-    |--------------------------------------------------------------------------
-    | Appended API Attributes
-    |--------------------------------------------------------------------------
-    |
-    | Every JSON version of the user will automatically contain:
-    |
-    | "profile_photo_url": "https://domain.com/api/profile-images/..."
-    |
-    */
-
     protected $appends = [
         'profile_photo_url',
     ];
@@ -55,9 +45,25 @@ class User extends Authenticatable
     |--------------------------------------------------------------------------
     */
 
-    public function shop()
+    public function shop(): BelongsTo
     {
-        return $this->belongsTo(Shop::class, 'shop_id');
+        return $this->belongsTo(
+            Shop::class,
+            'shop_id'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Role helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function isSuperAdmin(): bool
+    {
+        return strtolower(
+            trim((string) $this->role)
+        ) === 'super_admin';
     }
 
     /*
@@ -72,10 +78,13 @@ class User extends Authenticatable
             return null;
         }
 
-        $filename = basename($this->profile_photo);
+        $filename = basename(
+            (string) $this->profile_photo
+        );
 
-        return route('profile.photo.public', [
-            'filename' => $filename,
-        ]);
+        return route(
+            'profile.photo.public',
+            ['filename' => $filename]
+        );
     }
 }

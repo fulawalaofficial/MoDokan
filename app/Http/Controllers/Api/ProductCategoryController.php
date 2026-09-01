@@ -15,34 +15,61 @@ class ProductCategoryController extends Controller
 
     public function index(Request $request)
     {
-        $shopId = $this->shopId();
-        $perPage = min(max((int) $request->get('per_page', 100), 1), 100);
+        $shopId = $this->shopId($request);
 
-        return ProductCategory::query()
+        $perPage = min(
+            max((int) $request->get('per_page', 100), 1),
+            100
+        );
+
+        $categories = ProductCategory::query()
             ->where('shop_id', $shopId)
-            ->when($request->filled('search'), function ($query) use ($request) {
-                $search = trim((string) $request->search);
+            ->when(
+                $request->filled('search'),
+                function ($query) use ($request) {
+                    $search = trim((string) $request->search);
 
-                $query->where('name', 'like', '%' . $search . '%');
-            })
-            ->when($request->filled('status'), function ($query) use ($request) {
-                $query->where('status', $request->status);
-            })
+                    $query->where(
+                        'name',
+                        'like',
+                        '%' . $search . '%'
+                    );
+                }
+            )
+            ->when(
+                $request->filled('status'),
+                function ($query) use ($request) {
+                    $query->where(
+                        'status',
+                        $request->status
+                    );
+                }
+            )
             ->orderBy('name')
             ->paginate($perPage);
+
+        return response()->json($categories);
     }
 
     public function store(Request $request)
     {
-        $shopId = $this->shopId();
+        $shopId = $this->shopId($request);
 
         $data = $request->validate([
             'name' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('product_categories', 'name')
-                    ->where(fn ($query) => $query->where('shop_id', $shopId)),
+                Rule::unique(
+                    'product_categories',
+                    'name'
+                )->where(
+                    fn ($query) =>
+                        $query->where(
+                            'shop_id',
+                            $shopId
+                        )
+                ),
             ],
             'description' => [
                 'nullable',
@@ -59,27 +86,42 @@ class ProductCategoryController extends Controller
         ]);
 
         $data['shop_id'] = $shopId;
-        $data['status'] = $data['status'] ?? 'active';
+        $data['status'] =
+            $data['status'] ?? 'active';
 
-        $category = ProductCategory::create($data);
+        $category =
+            ProductCategory::create($data);
 
-        return response()->json($category, 201);
+        return response()->json(
+            $category,
+            201
+        );
     }
 
-    public function show(ProductCategory $productCategory)
-    {
-        $this->ensureCategoryBelongsToShop($productCategory);
+    public function show(
+        Request $request,
+        ProductCategory $productCategory
+    ) {
+        $this->ensureBelongsToShop(
+            $request,
+            $productCategory
+        );
 
-        return $productCategory;
+        return response()->json(
+            $productCategory
+        );
     }
 
     public function update(
         Request $request,
         ProductCategory $productCategory
     ) {
-        $this->ensureCategoryBelongsToShop($productCategory);
+        $shopId = $this->shopId($request);
 
-        $shopId = $this->shopId();
+        $this->ensureBelongsToShop(
+            $request,
+            $productCategory
+        );
 
         $data = $request->validate([
             'name' => [
@@ -87,9 +129,20 @@ class ProductCategoryController extends Controller
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('product_categories', 'name')
-                    ->where(fn ($query) => $query->where('shop_id', $shopId))
-                    ->ignore($productCategory->id),
+                Rule::unique(
+                    'product_categories',
+                    'name'
+                )
+                    ->where(
+                        fn ($query) =>
+                            $query->where(
+                                'shop_id',
+                                $shopId
+                            )
+                    )
+                    ->ignore(
+                        $productCategory->id
+                    ),
             ],
             'description' => [
                 'nullable',
@@ -107,16 +160,28 @@ class ProductCategoryController extends Controller
 
         $productCategory->update($data);
 
-        return $productCategory->fresh();
+        return response()->json(
+            $productCategory->fresh()
+        );
     }
 
-    public function destroy(ProductCategory $productCategory)
-    {
-        $this->ensureCategoryBelongsToShop($productCategory);
+    public function destroy(
+        Request $request,
+        ProductCategory $productCategory
+    ) {
+        $shopId = $this->shopId($request);
+
+        $this->ensureBelongsToShop(
+            $request,
+            $productCategory
+        );
 
         $hasProducts = Product::query()
-            ->where('shop_id', $this->shopId())
-            ->where('product_category_id', $productCategory->id)
+            ->where('shop_id', $shopId)
+            ->where(
+                'product_category_id',
+                $productCategory->id
+            )
             ->exists();
 
         if ($hasProducts) {
@@ -133,11 +198,13 @@ class ProductCategoryController extends Controller
         ]);
     }
 
-    private function ensureCategoryBelongsToShop(
+    private function ensureBelongsToShop(
+        Request $request,
         ProductCategory $productCategory
     ): void {
         abort_unless(
-            (int) $productCategory->shop_id === (int) $this->shopId(),
+            (int) $productCategory->shop_id ===
+                (int) $this->shopId($request),
             403,
             'This category does not belong to your shop.'
         );

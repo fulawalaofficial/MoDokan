@@ -14,72 +14,137 @@ class ProductController extends Controller
 
     public function index(Request $request)
     {
-        $shopId = $this->shopId();
-        $perPage = min(max((int) $request->get('per_page', 30), 1), 100);
+        $shopId = $this->shopId($request);
 
-        return Product::with(['category', 'supplier'])
+        $perPage = min(
+            max((int) $request->get('per_page', 30), 1),
+            100
+        );
+
+        return Product::with([
+            'category',
+            'supplier',
+        ])
             ->where('shop_id', $shopId)
-            ->when($request->filled('search'), function ($query) use ($request) {
-                $search = trim((string) $request->search);
+            ->when(
+                $request->filled('search'),
+                function ($query) use ($request) {
+                    $search = trim(
+                        (string) $request->search
+                    );
 
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', '%' . $search . '%')
-                        ->orWhere('sku', 'like', '%' . $search . '%')
-                        ->orWhere('barcode', 'like', '%' . $search . '%');
-                });
-            })
-            ->when($request->boolean('low_stock'), function ($query) {
-                $query->whereColumn('quantity', '<=', 'low_stock_alert');
-            })
+                    $query->where(
+                        function ($q) use ($search) {
+                            $q->where(
+                                'name',
+                                'like',
+                                '%' . $search . '%'
+                            )
+                                ->orWhere(
+                                    'sku',
+                                    'like',
+                                    '%' . $search . '%'
+                                )
+                                ->orWhere(
+                                    'barcode',
+                                    'like',
+                                    '%' . $search . '%'
+                                );
+                        }
+                    );
+                }
+            )
+            ->when(
+                $request->boolean('low_stock'),
+                fn ($query) =>
+                    $query->whereColumn(
+                        'quantity',
+                        '<=',
+                        'low_stock_alert'
+                    )
+            )
             ->latest()
             ->paginate($perPage);
     }
 
     public function store(Request $request)
     {
-        $shopId = $this->shopId();
-        $data = $this->validated($request, false, $shopId);
+        $shopId = $this->shopId($request);
+
+        $data = $this->validated(
+            $request,
+            false,
+            $shopId
+        );
 
         $data['shop_id'] = $shopId;
-        $data['opening_stock'] = $data['quantity'] ?? 0;
+        $data['opening_stock'] =
+            $data['quantity'] ?? 0;
 
         $product = Product::create($data);
 
         return response()->json(
-            $product->load(['category', 'supplier']),
+            $product->load([
+                'category',
+                'supplier',
+            ]),
             201
         );
     }
 
-    public function show(Product $product)
-    {
-        $this->ensureProductBelongsToShop($product);
+    public function show(
+        Request $request,
+        Product $product
+    ) {
+        $this->ensureBelongsToShop(
+            $request,
+            $product
+        );
 
-        return $product->load([
-            'category',
-            'supplier',
-            'stockHistories',
-        ]);
+        return response()->json(
+            $product->load([
+                'category',
+                'supplier',
+                'stockHistories',
+            ])
+        );
     }
 
-    public function update(Request $request, Product $product)
-    {
-        $this->ensureProductBelongsToShop($product);
+    public function update(
+        Request $request,
+        Product $product
+    ) {
+        $this->ensureBelongsToShop(
+            $request,
+            $product
+        );
 
-        $shopId = $this->shopId();
-        $data = $this->validated($request, true, $shopId);
+        $shopId = $this->shopId($request);
+
+        $data = $this->validated(
+            $request,
+            true,
+            $shopId
+        );
 
         $product->update($data);
 
-        return $product->fresh([
-            'category',
-            'supplier',
-        ]);
+        return response()->json(
+            $product->fresh([
+                'category',
+                'supplier',
+            ])
+        );
     }
 
-    public function destroy(Product $product)
-    {
-        $this->ensureProductBelongsToShop($product);
+    public function destroy(
+        Request $request,
+        Product $product
+    ) {
+        $this->ensureBelongsToShop(
+            $request,
+            $product
+        );
 
         $product->delete();
 
@@ -88,10 +153,13 @@ class ProductController extends Controller
         ]);
     }
 
-    private function ensureProductBelongsToShop(Product $product): void
-    {
+    private function ensureBelongsToShop(
+        Request $request,
+        Product $product
+    ): void {
         abort_unless(
-            (int) $product->shop_id === (int) $this->shopId(),
+            (int) $product->shop_id ===
+                (int) $this->shopId($request),
             403,
             'This product does not belong to your shop.'
         );
@@ -99,26 +167,41 @@ class ProductController extends Controller
 
     private function validated(
         Request $request,
-        bool $update = false,
-        ?int $shopId = null
+        bool $update,
+        int $shopId
     ): array {
-        $shopId = $shopId ?? (int) $this->shopId();
-
-        $requiredOrSometimes = $update ? 'sometimes' : 'required';
+        $requiredOrSometimes =
+            $update ? 'sometimes' : 'required';
 
         return $request->validate([
             'product_category_id' => [
                 $requiredOrSometimes,
                 'integer',
-                Rule::exists('product_categories', 'id')
-                    ->where(fn ($query) => $query->where('shop_id', $shopId)),
+                Rule::exists(
+                    'product_categories',
+                    'id'
+                )->where(
+                    fn ($query) =>
+                        $query->where(
+                            'shop_id',
+                            $shopId
+                        )
+                ),
             ],
 
             'supplier_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('suppliers', 'id')
-                    ->where(fn ($query) => $query->where('shop_id', $shopId)),
+                Rule::exists(
+                    'suppliers',
+                    'id'
+                )->where(
+                    fn ($query) =>
+                        $query->where(
+                            'shop_id',
+                            $shopId
+                        )
+                ),
             ],
 
             'name' => [

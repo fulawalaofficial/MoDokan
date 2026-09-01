@@ -18,16 +18,17 @@ class ShopActive
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated.',
+                'code' => 'UNAUTHENTICATED',
             ], 401);
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Super admin
+        | Super Admin
         |--------------------------------------------------------------------------
         |
-        | Some User models have isSuperAdmin(); some do not.
-        | Never call the method unless it exists.
+        | Super admins are not tied to a normal shop account.
+        | The method check keeps this middleware compatible with older User models.
         |
         */
         if (
@@ -40,12 +41,8 @@ class ShopActive
         try {
             /*
             |--------------------------------------------------------------------------
-            | Resolve shop safely
+            | Resolve shop from users.shop_id
             |--------------------------------------------------------------------------
-            |
-            | Do not depend on $user->shop being available.
-            | First resolve from users.shop_id.
-            |
             */
             $shopId = (int) ($user->getAttribute('shop_id') ?? 0);
 
@@ -54,10 +51,14 @@ class ShopActive
                 : null;
 
             /*
-             * Compatibility/self-repair:
-             * Older registrations may have shops.owner_id set correctly
-             * while users.shop_id is NULL.
-             */
+            |--------------------------------------------------------------------------
+            | Compatibility / self-repair
+            |--------------------------------------------------------------------------
+            |
+            | Older registrations can have shops.owner_id populated while
+            | users.shop_id is NULL or stale.
+            |
+            */
             if (!$shop) {
                 $shop = Shop::query()
                     ->where('owner_id', $user->getKey())
@@ -75,6 +76,7 @@ class ShopActive
                     'success' => false,
                     'message' => 'No shop is linked with this user.',
                     'code' => 'SHOP_NOT_LINKED',
+                    'user_id' => $user->getKey(),
                 ], 403);
             }
 
@@ -83,12 +85,11 @@ class ShopActive
             | Shop status
             |--------------------------------------------------------------------------
             |
-            | Status checks are case-insensitive so Active/active both work.
+            | Active / active / ACTIVE and Approved / approved all work.
             |
             */
-            $status = strtolower(
-                trim((string) ($shop->status ?? 'active'))
-            );
+            $rawStatus = trim((string) ($shop->status ?? ''));
+            $status = strtolower($rawStatus);
 
             if (!in_array($status, ['active', 'approved'], true)) {
                 return response()->json([
@@ -96,7 +97,8 @@ class ShopActive
                     'message' => $status === 'pending'
                         ? 'Your shop is waiting for admin approval.'
                         : 'Your shop is inactive.',
-                    'shop_status' => $shop->status,
+                    'shop_status' => $rawStatus,
+                    'shop_id' => $shop->getKey(),
                     'code' => $status === 'pending'
                         ? 'SHOP_PENDING'
                         : 'SHOP_INACTIVE',
@@ -104,10 +106,18 @@ class ShopActive
             }
 
             /*
-             * Make the resolved shop available to controllers/traits
-             * without another database query.
-             */
+            |--------------------------------------------------------------------------
+            | Share the resolved shop
+            |--------------------------------------------------------------------------
+            |
+            | Controllers and ResolvesShop can now use the same resolved shop.
+            |
+            */
             $request->attributes->set('current_shop', $shop);
+            $request->attributes->set('current_shop_id', (int) $shop->getKey());
+
+            // Prevent unnecessary additional relationship queries.
+            $user->setRelation('shop', $shop);
 
             return $next($request);
         } catch (Throwable $e) {

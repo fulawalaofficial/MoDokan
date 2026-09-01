@@ -20,11 +20,9 @@ use App\Http\Controllers\Api\ShopController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\SupplierController;
-
 use App\Http\Middleware\ShopActive;
-
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-
 
 /*
 |--------------------------------------------------------------------------
@@ -52,24 +50,10 @@ Route::post(
     [AuthController::class, 'verifyOtp']
 );
 
-
 /*
 |--------------------------------------------------------------------------
 | Public Profile Image
 |--------------------------------------------------------------------------
-|
-| React Native app:
-|
-| GET /api/profile-images/{filename}
-|
-| Example:
-|
-| https://modokan.mahaprabhutech.online/api/profile-images/photo.jpg
-|
-| This serves images directly from:
-|
-| storage/app/public/profile-images
-|
 */
 
 Route::get(
@@ -82,26 +66,16 @@ Route::get(
     )
     ->name('profile.photo.public');
 
-
 /*
 |--------------------------------------------------------------------------
 | Authenticated Shop API
 |--------------------------------------------------------------------------
-|
-| Every route inside this group requires:
-|
-| Authorization: Bearer YOUR_SANCTUM_TOKEN
-|
-| ShopActive middleware also verifies that the logged-in user's shop
-| is active.
-|
 */
 
 Route::middleware([
     'auth:sanctum',
     ShopActive::class,
 ])->group(function () {
-
 
     /*
     |--------------------------------------------------------------------------
@@ -119,17 +93,45 @@ Route::middleware([
         [AuthController::class, 'logout']
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Shop access diagnostic
+    |--------------------------------------------------------------------------
+    |
+    | Safe authenticated endpoint used to verify Sanctum + ShopActive.
+    | You may remove this route later after testing.
+    |
+    | GET /api/shop/access-check
+    |
+    */
+    Route::get(
+        '/shop/access-check',
+        function (Request $request) {
+            $shop = $request->attributes->get(
+                'current_shop'
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Shop access is working.',
+                'user_id' => $request->user()?->id,
+                'user_shop_id' =>
+                    $request->user()?->shop_id,
+                'shop' => $shop
+                    ? [
+                        'id' => $shop->id,
+                        'name' => $shop->name,
+                        'status' => $shop->status,
+                    ]
+                    : null,
+            ]);
+        }
+    );
 
     /*
     |--------------------------------------------------------------------------
     | Account Profile Edit
     |--------------------------------------------------------------------------
-    |
-    | React Native:
-    |
-    | PUT   /api/profile
-    | PATCH /api/profile
-    |
     */
 
     Route::put(
@@ -142,21 +144,10 @@ Route::middleware([
         [AccountProfileController::class, 'update']
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Profile Photo
     |--------------------------------------------------------------------------
-    |
-    | React Native:
-    |
-    | POST   /api/profile/photo
-    | DELETE /api/profile/photo-delete
-    |
-    | Multipart field:
-    |
-    | profile_photo
-    |
     */
 
     Route::post(
@@ -169,7 +160,6 @@ Route::middleware([
         [ProfileController::class, 'deletePhoto']
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Dashboard
@@ -180,7 +170,6 @@ Route::middleware([
         '/dashboard',
         [DashboardController::class, 'index']
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -203,7 +192,6 @@ Route::middleware([
         [SettingsController::class, 'update']
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Product Categories
@@ -215,7 +203,6 @@ Route::middleware([
         ProductCategoryController::class
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Products
@@ -226,7 +213,6 @@ Route::middleware([
         'products',
         ProductController::class
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -249,7 +235,6 @@ Route::middleware([
         [StockController::class, 'stockOut']
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Suppliers
@@ -260,7 +245,6 @@ Route::middleware([
         'suppliers',
         SupplierController::class
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -277,7 +261,6 @@ Route::middleware([
         '/customers/{customer}/ledger',
         [CustomerController::class, 'ledger']
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -299,7 +282,6 @@ Route::middleware([
         [SaleController::class, 'returnSale']
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Dues
@@ -316,7 +298,6 @@ Route::middleware([
         [DueController::class, 'collect']
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Payments
@@ -328,21 +309,10 @@ Route::middleware([
         [PaymentController::class, 'index']
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Repairs
     |--------------------------------------------------------------------------
-    |
-    | Standard API Resource:
-    |
-    | GET       /api/repairs
-    | POST      /api/repairs
-    | GET       /api/repairs/{repair}
-    | PUT       /api/repairs/{repair}
-    | PATCH     /api/repairs/{repair}
-    | DELETE    /api/repairs/{repair}
-    |
     */
 
     Route::apiResource(
@@ -350,66 +320,20 @@ Route::middleware([
         RepairController::class
     );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Repair Status
-    |--------------------------------------------------------------------------
-    |
-    | PATCH /api/repairs/{repair}/status
-    |
-    */
-
     Route::patch(
         '/repairs/{repair}/status',
         [RepairController::class, 'updateStatus']
     );
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Repair Payment
-    |--------------------------------------------------------------------------
-    |
-    | POST /api/repairs/{repair}/payment
-    |
-    */
 
     Route::post(
         '/repairs/{repair}/payment',
         [RepairController::class, 'collectPayment']
     );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Repair Receiving / Item Photo
-    |--------------------------------------------------------------------------
-    |
-    | NEW ROUTE
-    |
-    | POST /api/repairs/{repair}/item-photo
-    |
-    | Multipart form field:
-    |
-    | item_photo
-    |
-    | Example:
-    |
-    | POST /api/repairs/15/item-photo
-    |
-    | Headers:
-    |
-    | Authorization: Bearer SANCTUM_TOKEN
-    | Accept: application/json
-    |
-    */
-
     Route::post(
         '/repairs/{repair}/item-photo',
         [RepairPhotoController::class, 'store']
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -422,7 +346,6 @@ Route::middleware([
         ExpenseController::class
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | Staff
@@ -433,7 +356,6 @@ Route::middleware([
         'staff',
         StaffController::class
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -470,7 +392,6 @@ Route::middleware([
         '/reports/expense',
         [ReportController::class, 'expense']
     );
-
 
     /*
     |--------------------------------------------------------------------------
