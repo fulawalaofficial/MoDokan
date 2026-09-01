@@ -9,7 +9,6 @@ use App\Models\Repair;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use Carbon\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -20,13 +19,11 @@ class ReportService
     public function range(array $filters): array
     {
         $from = Carbon::parse(
-            $filters['from'] ??
-            now()->startOfMonth()
+            $filters['from'] ?? now()->startOfMonth()
         )->startOfDay();
 
         $to = Carbon::parse(
-            $filters['to'] ??
-            now()
+            $filters['to'] ?? now()
         )->endOfDay();
 
         return [$from, $to];
@@ -37,22 +34,39 @@ class ReportService
         $todayStart = now()->copy()->startOfDay();
         $todayEnd = now()->copy()->endOfDay();
 
+        $salesDateColumn = $this->firstExistingColumn(
+            'sales',
+            ['sale_date', 'created_at']
+        );
+
+        $expenseDateColumn = $this->firstExistingColumn(
+            'expenses',
+            ['expense_date', 'created_at']
+        );
+
         $todaySales = $this->safe(
             'today_sales',
             0.0,
             function () use (
                 $shopId,
                 $todayStart,
-                $todayEnd
+                $todayEnd,
+                $salesDateColumn
             ) {
-                if (!$this->hasTable('sales')) {
+                if (
+                    !$salesDateColumn ||
+                    !$this->hasColumns(
+                        'sales',
+                        ['shop_id', 'total_amount']
+                    )
+                ) {
                     return 0.0;
                 }
 
                 return (float) Sale::query()
                     ->where('shop_id', $shopId)
                     ->whereBetween(
-                        'sale_date',
+                        $salesDateColumn,
                         [$todayStart, $todayEnd]
                     )
                     ->sum('total_amount');
@@ -65,16 +79,23 @@ class ReportService
             function () use (
                 $shopId,
                 $todayStart,
-                $todayEnd
+                $todayEnd,
+                $salesDateColumn
             ) {
-                if (!$this->hasTable('sales')) {
+                if (
+                    !$salesDateColumn ||
+                    !$this->hasColumns(
+                        'sales',
+                        ['shop_id', 'paid_amount']
+                    )
+                ) {
                     return 0.0;
                 }
 
                 return (float) Sale::query()
                     ->where('shop_id', $shopId)
                     ->whereBetween(
-                        'sale_date',
+                        $salesDateColumn,
                         [$todayStart, $todayEnd]
                     )
                     ->sum('paid_amount');
@@ -87,16 +108,23 @@ class ReportService
             function () use (
                 $shopId,
                 $todayStart,
-                $todayEnd
+                $todayEnd,
+                $salesDateColumn
             ) {
-                if (!$this->hasTable('sales')) {
+                if (
+                    !$salesDateColumn ||
+                    !$this->hasColumns(
+                        'sales',
+                        ['shop_id', 'due_amount']
+                    )
+                ) {
                     return 0.0;
                 }
 
                 return (float) Sale::query()
                     ->where('shop_id', $shopId)
                     ->whereBetween(
-                        'sale_date',
+                        $salesDateColumn,
                         [$todayStart, $todayEnd]
                     )
                     ->sum('due_amount');
@@ -106,16 +134,27 @@ class ReportService
         $todayExpense = $this->safe(
             'today_expense',
             0.0,
-            function () use ($shopId) {
-                if (!$this->hasTable('expenses')) {
+            function () use (
+                $shopId,
+                $todayStart,
+                $todayEnd,
+                $expenseDateColumn
+            ) {
+                if (
+                    !$expenseDateColumn ||
+                    !$this->hasColumns(
+                        'expenses',
+                        ['shop_id', 'amount']
+                    )
+                ) {
                     return 0.0;
                 }
 
                 return (float) Expense::query()
                     ->where('shop_id', $shopId)
-                    ->whereDate(
-                        'expense_date',
-                        today()
+                    ->whereBetween(
+                        $expenseDateColumn,
+                        [$todayStart, $todayEnd]
                     )
                     ->sum('amount');
             }
@@ -127,7 +166,8 @@ class ReportService
             fn () => $this->todayGrossProfit(
                 $shopId,
                 $todayStart,
-                $todayEnd
+                $todayEnd,
+                $salesDateColumn
             )
         );
 
@@ -135,7 +175,12 @@ class ReportService
             'total_customers',
             0,
             function () use ($shopId) {
-                if (!$this->hasTable('customers')) {
+                if (
+                    !$this->hasColumns(
+                        'customers',
+                        ['shop_id']
+                    )
+                ) {
                     return 0;
                 }
 
@@ -149,7 +194,12 @@ class ReportService
             'total_products',
             0,
             function () use ($shopId) {
-                if (!$this->hasTable('products')) {
+                if (
+                    !$this->hasColumns(
+                        'products',
+                        ['shop_id']
+                    )
+                ) {
                     return 0;
                 }
 
@@ -269,60 +319,92 @@ class ReportService
 
         $recentTransactions = $this->safe(
             'recent_transactions',
-            collect(),
-            function () use ($shopId) {
-                if (!$this->hasTable('sales')) {
-                    return collect();
+            [],
+            function () use (
+                $shopId,
+                $salesDateColumn
+            ) {
+                if (
+                    !$this->hasColumns(
+                        'sales',
+                        ['shop_id']
+                    )
+                ) {
+                    return [];
                 }
 
                 $query = Sale::query()
                     ->where('shop_id', $shopId)
-                    ->orderByDesc('sale_date')
                     ->limit(5);
 
-                if ($this->hasTable('customers')) {
+                if ($salesDateColumn) {
+                    $query->orderByDesc($salesDateColumn);
+                } else {
+                    $query->orderByDesc('id');
+                }
+
+                /*
+                 * Only eager-load customer when the Sale model actually has
+                 * the relationship. This prevents a missing relation from
+                 * breaking the dashboard.
+                 */
+                if (method_exists(new Sale(), 'customer')) {
                     $query->with('customer');
                 }
 
-                return $query->get();
+                return $query->get()->values()->all();
             }
         );
 
         $recentCustomers = $this->safe(
             'recent_customers',
-            collect(),
+            [],
             function () use ($shopId) {
-                if (!$this->hasTable('customers')) {
-                    return collect();
+                if (
+                    !$this->hasColumns(
+                        'customers',
+                        ['shop_id']
+                    )
+                ) {
+                    return [];
                 }
 
                 return Customer::query()
                     ->where('shop_id', $shopId)
                     ->orderByDesc('id')
                     ->limit(5)
-                    ->get();
+                    ->get()
+                    ->values()
+                    ->all();
             }
         );
 
         return [
-            'today_sales' =>
-                round((float) $todaySales, 2),
+            'today_sales' => round(
+                (float) $todaySales,
+                2
+            ),
 
-            'today_paid' =>
-                round((float) $todayPaid, 2),
+            'today_paid' => round(
+                (float) $todayPaid,
+                2
+            ),
 
-            'today_due' =>
-                round((float) $todayDue, 2),
+            'today_due' => round(
+                (float) $todayDue,
+                2
+            ),
 
-            'today_expense' =>
-                round((float) $todayExpense, 2),
+            'today_expense' => round(
+                (float) $todayExpense,
+                2
+            ),
 
-            'today_profit' =>
-                round(
-                    (float) $grossProfit -
-                    (float) $todayExpense,
-                    2
-                ),
+            'today_profit' => round(
+                (float) $grossProfit -
+                (float) $todayExpense,
+                2
+            ),
 
             'total_customers' =>
                 (int) $totalCustomers,
@@ -330,8 +412,10 @@ class ReportService
             'total_products' =>
                 (int) $totalProducts,
 
-            'total_stock_value' =>
-                round((float) $stockValue, 2),
+            'total_stock_value' => round(
+                (float) $stockValue,
+                2
+            ),
 
             'low_stock_products' =>
                 (int) $lowStock,
@@ -352,20 +436,18 @@ class ReportService
                 $this->safe(
                     'monthly_sales_chart',
                     [],
-                    fn () =>
-                        $this->monthlySaleChart(
-                            $shopId
-                        )
+                    fn () => $this->monthlySaleChart(
+                        $shopId
+                    )
                 ),
 
             'monthly_profit_chart' =>
                 $this->safe(
                     'monthly_profit_chart',
                     [],
-                    fn () =>
-                        $this->monthlyProfitChart(
-                            $shopId
-                        )
+                    fn () => $this->monthlyProfitChart(
+                        $shopId
+                    )
                 ),
         ];
     }
@@ -373,11 +455,19 @@ class ReportService
     private function todayGrossProfit(
         int $shopId,
         Carbon $from,
-        Carbon $to
+        Carbon $to,
+        ?string $salesDateColumn = null
     ): float {
         if (
-            !$this->hasTable('sale_items') ||
-            !$this->hasTable('sales')
+            !$salesDateColumn ||
+            !$this->hasColumns(
+                'sales',
+                ['id', 'shop_id']
+            ) ||
+            !$this->hasColumns(
+                'sale_items',
+                ['sale_id']
+            )
         ) {
             return 0.0;
         }
@@ -398,7 +488,7 @@ class ReportService
                     $shopId
                 )
                 ->whereBetween(
-                    'sales.sale_date',
+                    "sales.{$salesDateColumn}",
                     [$from, $to]
                 )
                 ->sum('sale_items.profit');
@@ -436,7 +526,7 @@ class ReportService
                 $shopId
             )
             ->whereBetween(
-                'sales.sale_date',
+                "sales.{$salesDateColumn}",
                 [$from, $to]
             )
             ->selectRaw(
@@ -460,12 +550,17 @@ class ReportService
     public function monthlySaleChart(
         int $shopId
     ): array {
+        $salesDateColumn = $this->firstExistingColumn(
+            'sales',
+            ['sale_date', 'created_at']
+        );
+
         if (
+            !$salesDateColumn ||
             !$this->hasColumns(
                 'sales',
                 [
                     'shop_id',
-                    'sale_date',
                     'total_amount',
                 ]
             )
@@ -473,8 +568,11 @@ class ReportService
             return [];
         }
 
+        $qualifiedDate =
+            "sales.{$salesDateColumn}";
+
         $month = $this->monthExpression(
-            'sales.sale_date'
+            $qualifiedDate
         );
 
         return Sale::query()
@@ -483,7 +581,7 @@ class ReportService
                 $shopId
             )
             ->where(
-                'sales.sale_date',
+                $qualifiedDate,
                 '>=',
                 now()
                     ->subMonths(11)
@@ -498,8 +596,10 @@ class ReportService
             ->get()
             ->map(fn ($row) => [
                 'month' => $row->month,
-                'total' =>
-                    round((float) $row->total, 2),
+                'total' => round(
+                    (float) $row->total,
+                    2
+                ),
             ])
             ->values()
             ->all();
@@ -508,15 +608,30 @@ class ReportService
     public function monthlyProfitChart(
         int $shopId
     ): array {
+        $salesDateColumn = $this->firstExistingColumn(
+            'sales',
+            ['sale_date', 'created_at']
+        );
+
         if (
-            !$this->hasTable('sale_items') ||
-            !$this->hasTable('sales')
+            !$salesDateColumn ||
+            !$this->hasColumns(
+                'sales',
+                ['id', 'shop_id']
+            ) ||
+            !$this->hasColumns(
+                'sale_items',
+                ['sale_id']
+            )
         ) {
             return [];
         }
 
+        $qualifiedDate =
+            "sales.{$salesDateColumn}";
+
         $month = $this->monthExpression(
-            'sales.sale_date'
+            $qualifiedDate
         );
 
         if (
@@ -537,7 +652,7 @@ class ReportService
                     $shopId
                 )
                 ->where(
-                    'sales.sale_date',
+                    $qualifiedDate,
                     '>=',
                     now()
                         ->subMonths(11)
@@ -552,11 +667,10 @@ class ReportService
                 ->get()
                 ->map(fn ($row) => [
                     'month' => $row->month,
-                    'profit' =>
-                        round(
-                            (float) $row->profit,
-                            2
-                        ),
+                    'profit' => round(
+                        (float) $row->profit,
+                        2
+                    ),
                 ])
                 ->values()
                 ->all();
@@ -594,7 +708,7 @@ class ReportService
                 $shopId
             )
             ->where(
-                'sales.sale_date',
+                $qualifiedDate,
                 '>=',
                 now()
                     ->subMonths(11)
@@ -618,8 +732,10 @@ class ReportService
             ->get()
             ->map(fn ($row) => [
                 'month' => $row->month,
-                'profit' =>
-                    round((float) $row->profit, 2),
+                'profit' => round(
+                    (float) $row->profit,
+                    2
+                ),
             ])
             ->values()
             ->all();
@@ -640,6 +756,22 @@ class ReportService
             default =>
                 "DATE_FORMAT({$column}, '%Y-%m')",
         };
+    }
+
+    private function firstExistingColumn(
+        string $table,
+        array $columns
+    ): ?string {
+        foreach ($columns as $column) {
+            if ($this->hasColumn(
+                $table,
+                $column
+            )) {
+                return $column;
+            }
+        }
+
+        return null;
     }
 
     private function hasTable(
@@ -671,6 +803,15 @@ class ReportService
                     $column
                 );
         } catch (Throwable $e) {
+            Log::warning(
+                'Dashboard schema column check failed',
+                [
+                    'table' => $table,
+                    'column' => $column,
+                    'message' => $e->getMessage(),
+                ]
+            );
+
             return false;
         }
     }
@@ -684,10 +825,12 @@ class ReportService
         }
 
         foreach ($columns as $column) {
-            if (!$this->hasColumn(
-                $table,
-                $column
-            )) {
+            if (
+                !$this->hasColumn(
+                    $table,
+                    $column
+                )
+            ) {
                 return false;
             }
         }
