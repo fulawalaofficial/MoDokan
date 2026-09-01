@@ -1,25 +1,194 @@
 <?php
+
 namespace App\Http\Controllers\Api;
-use App\Http\Controllers\Controller;
+
 use App\Http\Controllers\Api\Concerns\ResolvesShop;
+use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+
 class ProductController extends Controller
 {
     use ResolvesShop;
-    public function index(Request $r) {
-        return Product::with(['category','supplier'])->where('shop_id',$this->shopId())
-            ->when($r->search, fn($q)=>$q->where('name','like','%'.$r->search.'%')->orWhere('sku','like','%'.$r->search.'%'))
-            ->when($r->low_stock, fn($q)=>$q->whereColumn('quantity','<=','low_stock_alert'))
-            ->latest()->paginate(30);
+
+    public function index(Request $request)
+    {
+        $shopId = $this->shopId();
+        $perPage = min(max((int) $request->get('per_page', 30), 1), 100);
+
+        return Product::with(['category', 'supplier'])
+            ->where('shop_id', $shopId)
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = trim((string) $request->search);
+
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%')
+                        ->orWhere('sku', 'like', '%' . $search . '%')
+                        ->orWhere('barcode', 'like', '%' . $search . '%');
+                });
+            })
+            ->when($request->boolean('low_stock'), function ($query) {
+                $query->whereColumn('quantity', '<=', 'low_stock_alert');
+            })
+            ->latest()
+            ->paginate($perPage);
     }
-    public function store(Request $r) { $data=$this->validated($r); $data['shop_id']=$this->shopId(); $data['opening_stock']=$data['quantity']??0; return Product::create($data)->load('category'); }
-    public function show(Product $product) { abort_unless($product->shop_id===$this->shopId(),403); return $product->load('category','supplier','stockHistories'); }
-    public function update(Request $r, Product $product) { abort_unless($product->shop_id===$this->shopId(),403); $product->update($this->validated($r, true)); return $product->fresh('category'); }
-    public function destroy(Product $product) { abort_unless($product->shop_id===$this->shopId(),403); $product->delete(); return response()->json(['message'=>'Product deleted.']); }
-    private function validated(Request $r, bool $update=false): array { return $r->validate([
-        'product_category_id'=>[$update?'sometimes':'required','exists:product_categories,id'],'supplier_id'=>'nullable|exists:suppliers,id','name'=>[$update?'sometimes':'required','string'],
-        'sku'=>'nullable|string','barcode'=>'nullable|string','image'=>'nullable|string','purchase_price'=>[$update?'sometimes':'required','numeric'],'selling_price'=>[$update?'sometimes':'required','numeric'],
-        'quantity'=>[$update?'sometimes':'required','numeric'],'unit_type'=>'nullable|string','low_stock_alert'=>'nullable|numeric','status'=>'nullable|string'
-    ]); }
+
+    public function store(Request $request)
+    {
+        $shopId = $this->shopId();
+        $data = $this->validated($request, false, $shopId);
+
+        $data['shop_id'] = $shopId;
+        $data['opening_stock'] = $data['quantity'] ?? 0;
+
+        $product = Product::create($data);
+
+        return response()->json(
+            $product->load(['category', 'supplier']),
+            201
+        );
+    }
+
+    public function show(Product $product)
+    {
+        $this->ensureProductBelongsToShop($product);
+
+        return $product->load([
+            'category',
+            'supplier',
+            'stockHistories',
+        ]);
+    }
+
+    public function update(Request $request, Product $product)
+    {
+        $this->ensureProductBelongsToShop($product);
+
+        $shopId = $this->shopId();
+        $data = $this->validated($request, true, $shopId);
+
+        $product->update($data);
+
+        return $product->fresh([
+            'category',
+            'supplier',
+        ]);
+    }
+
+    public function destroy(Product $product)
+    {
+        $this->ensureProductBelongsToShop($product);
+
+        $product->delete();
+
+        return response()->json([
+            'message' => 'Product deleted.',
+        ]);
+    }
+
+    private function ensureProductBelongsToShop(Product $product): void
+    {
+        abort_unless(
+            (int) $product->shop_id === (int) $this->shopId(),
+            403,
+            'This product does not belong to your shop.'
+        );
+    }
+
+    private function validated(
+        Request $request,
+        bool $update = false,
+        ?int $shopId = null
+    ): array {
+        $shopId = $shopId ?? (int) $this->shopId();
+
+        $requiredOrSometimes = $update ? 'sometimes' : 'required';
+
+        return $request->validate([
+            'product_category_id' => [
+                $requiredOrSometimes,
+                'integer',
+                Rule::exists('product_categories', 'id')
+                    ->where(fn ($query) => $query->where('shop_id', $shopId)),
+            ],
+
+            'supplier_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('suppliers', 'id')
+                    ->where(fn ($query) => $query->where('shop_id', $shopId)),
+            ],
+
+            'name' => [
+                $requiredOrSometimes,
+                'string',
+                'max:255',
+            ],
+
+            'sku' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'barcode' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'image' => [
+                'nullable',
+                'string',
+                'max:2048',
+            ],
+
+            'purchase_price' => [
+                $requiredOrSometimes,
+                'numeric',
+                'min:0',
+            ],
+
+            'selling_price' => [
+                $requiredOrSometimes,
+                'numeric',
+                'min:0',
+            ],
+
+            'quantity' => [
+                $requiredOrSometimes,
+                'numeric',
+                'min:0',
+            ],
+
+            'unit_type' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+
+            'low_stock_alert' => [
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+
+            'status' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+        ], [
+            'product_category_id.required' =>
+                'Please select a product category.',
+
+            'product_category_id.exists' =>
+                'The selected product category is invalid or does not belong to your shop.',
+
+            'supplier_id.exists' =>
+                'The selected supplier is invalid or does not belong to your shop.',
+        ]);
+    }
 }
